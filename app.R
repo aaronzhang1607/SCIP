@@ -13,6 +13,9 @@ library(shiny)
 library(ggplot2)
 library(tools)
 
+# 设置使用默认浏览器打开Shiny应用
+options(shiny.launch.browser = TRUE)
+
 # 灰色区间辅助函数，支持跨午夜
 make_shade_df <- function(
   date_seq,
