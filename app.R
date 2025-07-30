@@ -620,6 +620,23 @@ server <- function(input, output, session) {
         filename = "temperature_plot",
         width = 1200,
         height = 800
+      ),
+
+      # 设置默认模式为Pan而不是zoom
+      modeBarButtonsToRemove = list("zoom2d", "pan2d"),
+      modeBarButtons = list(
+        list(name = "pan2d", icon = list(
+          width = 16, 
+          height = 16, 
+          path = "M3 3h4L3 7V3zm10 10v4l4-4h-4z"
+        )),
+        "select2d",
+        "lasso2d",
+        "zoomIn",
+        "zoomOut",
+        "autoScale",
+        "resetScale",
+        "toImage"
       )
     )
     
