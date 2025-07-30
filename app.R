@@ -208,7 +208,22 @@ server <- function(input, output, session) {
     }
     df$RealTime <- sub("(\\d{2}:\\d{2}:\\d{2})\\..*", "\\1", df$RealTime)
     df$RealTime <- as.POSIXct(df$RealTime, format = "%Y/%m/%d %H:%M")
-    df
+    
+    # 创建完整的一分钟间隔时间序列
+    min_time <- min(df$RealTime, na.rm = TRUE)
+    max_time <- max(df$RealTime, na.rm = TRUE)
+    complete_time_seq <- seq(from = min_time, to = max_time, by = "min")
+    
+    # 创建完整时间序列的数据框
+    complete_df <- data.frame(RealTime = complete_time_seq)
+    
+    # 合并原始数据到完整时间序列中
+    merged_df <- merge(complete_df, df, by = "RealTime", all.x = TRUE)
+    
+    # 将缺失的Temperature值设置为NA
+    merged_df$Temperature[is.na(merged_df$Temperature)] <- NA
+    
+    merged_df
   })
 
   # 动态生成开始时间输入框
@@ -599,7 +614,9 @@ server <- function(input, output, session) {
       plot_bgcolor = "white",
       paper_bgcolor = "white",
       # 使用shapes参数添加暗周期背景和注射标记
-      shapes = shapes
+      shapes = shapes,
+      # 设置默认拖拽模式为pan
+      dragmode = "pan"
     )
     
     # 添加交互功能
@@ -621,22 +638,10 @@ server <- function(input, output, session) {
         width = 1200,
         height = 800
       ),
-
-      # 设置默认模式为Pan而不是zoom
-      modeBarButtonsToRemove = list("zoom2d", "pan2d"),
       modeBarButtons = list(
-        list(name = "pan2d", icon = list(
-          width = 16, 
-          height = 16, 
-          path = "M3 3h4L3 7V3zm10 10v4l4-4h-4z"
-        )),
-        "select2d",
-        "lasso2d",
-        "zoomIn",
-        "zoomOut",
-        "autoScale",
-        "resetScale",
-        "toImage"
+        list("pan2d", "zoom2d", "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d"),
+        list("select2d", "lasso2d"),
+        list("toImage")
       )
     )
     
