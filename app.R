@@ -14,6 +14,7 @@ utils::globalVariables(c(
 # 加载必要的R包
 library(shiny)     # 用于创建交互式Web应用
 library(ggplot2)   # 用于数据可视化
+library(plotly)    # 用于创建交互式图表
 library(tools)     # 提供文件路径操作等工具函数
 
 # 设置Shiny应用在默认浏览器中打开
@@ -96,6 +97,7 @@ ui <- fluidPage(
                  buttonLabel = "浏览..."),
         actionButton("load_processed_btn", "加载数据", 
                     class = "btn-primary"),
+        checkboxInput("show_processed", "显示处理数据", value = FALSE),
         br(), br(),
         h5("数据预览"),
         div(style = 'overflow-x: auto; font-size: 80%;',
@@ -145,7 +147,7 @@ ui <- fluidPage(
       width = 8,  # 从7增加到8
       wellPanel(
         style = "padding: 15px;",
-        plotOutput("lineplot", height = "750px")  # 增加图表高度
+        plotlyOutput("lineplot", height = "750px")  # 使用plotlyOutput替代plotOutput
       )
     )
   )
@@ -253,9 +255,20 @@ server <- function(input, output, session) {
   observeEvent(input$load_processed_btn, {
     req(input$processed_csv)
     tryCatch({
+      # 读取CSV文件
       df <- read.csv(input$processed_csv$datapath, 
                     stringsAsFactors = FALSE,
                     fileEncoding = "UTF-8")
+      
+      # 打印数据结构用于调试
+      print("处理后的数据结构:")
+      print(str(df))
+      print("前几行数据:")
+      print(head(df))
+      print(paste0("RealTime 类型: ", class(df$RealTime)))
+      print(paste0("Temperature 类型: ", class(df$Temperature)))
+      print(paste0("Injection 类型: ", class(df$Injection)))
+      print(paste0("Injection 值: ", paste(unique(df$Injection), collapse = ", ")))
       # 确保包含必要的列
       if (!"Injection" %in% names(df)) {
         showNotification("错误: 文件必须包含'Injection'列", 
@@ -276,6 +289,51 @@ server <- function(input, output, session) {
     req(df)
     head(df, 3)  # 只显示前3行作为预览
   }, rownames = FALSE, width = "100%")
+  
+  # 获取当前要显示的数据（原始或处理后的）
+  current_data <- reactive({
+    if (isTRUE(input$show_processed) && !is.null(processed_data())) {
+      df <- processed_data()
+      # 确保包含必要的列
+      if (!all(c("RealTime", "Temperature") %in% names(df))) {
+        showNotification("错误: 处理后的数据必须包含'RealTime'和'Temperature'列", 
+                        type = "error")
+        return(NULL)
+      }
+      # 确保RealTime是POSIXct类型
+      if (!inherits(df$RealTime, "POSIXct")) {
+        # 尝试不同的时间格式
+        df$RealTime <- tryCatch({
+          as.POSIXct(df$RealTime, format = "%Y/%m/%d %H:%M")
+        }, error = function(e) {
+          as.POSIXct(df$RealTime)
+        })
+      }
+      # 确保Temperature是数值类型
+      if (!is.numeric(df$Temperature)) {
+        df$Temperature <- as.numeric(as.character(df$Temperature))
+      }
+      # 确保Injection是逻辑类型
+      if ("Injection" %in% names(df)) {
+        if (is.character(df$Injection)) {
+          df$Injection <- toupper(trimws(df$Injection)) == "TRUE"
+        } else if (is.factor(df$Injection)) {
+          df$Injection <- as.logical(as.character(df$Injection))
+        }
+      }
+      df
+    } else {
+      filtered_data()
+    }
+  })
+  
+  # 获取Injection为TRUE的时间点
+  injection_times <- reactive({
+    if (!isTRUE(input$show_processed)) return(NULL)
+    df <- processed_data()
+    req(df, "Injection" %in% names(df))
+    df$RealTime[df$Injection == TRUE & !is.na(df$Injection)]
+  })
 
   # 保存处理后的数据到CSV文件
   observeEvent(input$save_btn, {
@@ -332,7 +390,6 @@ server <- function(input, output, session) {
   # 保存当前图表为PNG图片
   observeEvent(input$save_plot_btn, {
     req(input$csvfile)
-    df <- filtered_data()
     plot_filename <- input$save_plot_filename
     plot_dir <- input$save_plot_dir
     if (!nzchar(plot_filename)) {
@@ -347,110 +404,30 @@ server <- function(input, output, session) {
       })
       return()
     }
+    
+    # 创建目录（如果不存在）
+    if (!dir.exists(plot_dir)) {
+      dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
+    }
+    
     full_plot_path <- file.path(plot_dir, plot_filename)
-    light_begin <- ifelse(
-      is.null(input$light_begin) || !nzchar(input$light_begin),
-      "08:00:00",
-      input$light_begin
-    )
-    dark_begin <- ifelse(
-      is.null(input$dark_begin) || !nzchar(input$dark_begin),
-      "20:00:00",
-      input$dark_begin
-    )
-    start_time <- min(df$RealTime, na.rm = TRUE)
-    end_time <- max(df$RealTime, na.rm = TRUE)
-    date_seq <- seq(as.Date(start_time), as.Date(end_time), by = "day")
-    shade_df <- make_shade_df(
-      date_seq,
-      light_begin,
-      dark_begin,
-      start_time,
-      end_time
-    )
-    breaks_vec <- if (nrow(shade_df) > 0)
-      sort(unique(c(shade_df$xmin, shade_df$xmax))) else NULL
+    
     tryCatch(
       {
-        Sys.setlocale("LC_TIME", "C")
-        png(full_plot_path, width = 300, height = 300, units = "mm", res = 300)
-        p <- ggplot(df, aes(x = RealTime)) +
-          (if (nrow(shade_df) > 0)
-            geom_rect(
-              data = shade_df,
-              inherit.aes = FALSE,
-              aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
-              fill = "grey50",
-              alpha = 0.5
-            ) else NULL) +
-          geom_line(
-            aes(y = Temperature, color = "Temperature"),
-            linewidth = 0.5
-          ) +
-          scale_y_continuous(
-            name = "Temperature(°C)",
-            expand = c(0, 0),
-            limits = range(df$Temperature, na.rm = TRUE),
-            breaks = seq(
-              min(df$Temperature, na.rm = TRUE),
-              max(df$Temperature, na.rm = TRUE),
-              by = 3
-            )
-          ) +
-          scale_x_datetime(
-            breaks = breaks_vec,
-            date_labels = "%b %d %H:%M",
-            limits = range(df$RealTime, na.rm = TRUE)
-          ) +
-          scale_color_manual(values = c("Temperature" = "#377eb8"), name = "") +
-          theme_bw(base_family = "Arial") +
-          theme(
-            plot.title = element_text(
-              family = "Arial",
-              face = "bold",
-              size = 16,
-              hjust = 0.5
-            ),
-            plot.subtitle = element_text(
-              family = "Arial",
-              face = "plain",
-              size = 14,
-              hjust = 0.5
-            ),
-            axis.title = element_text(
-              family = "Arial",
-              face = "plain",
-              size = 13
-            ),
-            axis.text = element_text(
-              family = "Arial",
-              face = "plain",
-              size = 12
-            ),
-            axis.text.x = element_text(angle = 60, hjust = 1),
-            axis.line = element_line(linewidth = 0.5, colour = "black"),
-            legend.title = element_text(
-              family = "Arial",
-              face = "plain",
-              size = 12
-            ),
-            legend.text = element_text(
-              family = "Arial",
-              face = "plain",
-              size = 12
-            ),
-            legend.position = "bottom",
-            panel.grid = element_blank()
-          ) +
-          labs(x = "RealTime", title = input$plot_title)
-        print(p)
-        dev.off()
+        # 使用plotly的导出功能
+        plotly_IMAGE(
+          x = output$lineplot(),
+          width = 1200,
+          height = 800,
+          format = "png",
+          out_file = full_plot_path
+        )
+        
         output$save_plot_msg <- renderText({
           paste0("图片已保存：", full_plot_path)
         })
       },
       error = function(e) {
-        dev.off()
         output$save_plot_msg <- renderText({
           paste0("图片保存失败：", e$message)
         })
@@ -484,14 +461,21 @@ server <- function(input, output, session) {
     )
   })
 
-  # 渲染温度折线图
-  output$lineplot <- renderPlot({
+  # 渲染交互式温度折线图
+  output$lineplot <- renderPlotly({
     # 设置日期时间格式为英文，避免中文系统下的本地化问题
     Sys.setlocale("LC_TIME", "C")
-    Sys.setlocale("LC_TIME", "C")
-    df <- filtered_data()
-    req(input$xrange, input$yrange)
-    if (nrow(df) == 0) return(NULL)
+    
+    # 获取当前数据
+    df <- current_data()
+    req(df, nrow(df) > 0, input$xrange, input$yrange)
+    
+    # 确保RealTime是POSIXct类型
+    if (!inherits(df$RealTime, "POSIXct")) {
+      df$RealTime <- as.POSIXct(df$RealTime)
+    }
+    
+    # 获取光照设置
     light_begin <- ifelse(
       is.null(input$light_begin) || !nzchar(input$light_begin),
       "08:00:00",
@@ -502,8 +486,12 @@ server <- function(input, output, session) {
       "20:00:00",
       input$dark_begin
     )
+    
+    # 设置时间范围
     start_time <- min(df$RealTime, na.rm = TRUE)
     end_time <- max(df$RealTime, na.rm = TRUE)
+    
+    # 生成暗周期阴影区域
     date_seq <- seq(as.Date(start_time), as.Date(end_time), by = "day")
     shade_df <- make_shade_df(
       date_seq,
@@ -512,60 +500,132 @@ server <- function(input, output, session) {
       start_time,
       end_time
     )
-    breaks_vec <- if (nrow(shade_df) > 0)
-      sort(unique(c(shade_df$xmin, shade_df$xmax))) else NULL
-    ggplot(df, aes(x = RealTime)) +
-      # 添加灰色背景表示暗周期
-      (if (nrow(shade_df) > 0)
-        geom_rect(
-          data = shade_df,
-          inherit.aes = FALSE,
-          aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
-          fill = "grey80",
-          alpha = 0.5
-        ) else NULL) +
-      geom_line(aes(y = Temperature, color = "Temperature"), linewidth = 0.5) +
-      scale_y_continuous(
-        name = "Temperature(°C)",
-        expand = c(0, 0),
-        limits = input$yrange,
-        breaks = seq(input$yrange[1], input$yrange[2], by = 3)
-      ) +
-      scale_x_datetime(
-        breaks = breaks_vec,
-        date_labels = "%b %d %H:%M",
-        limits = as.POSIXct(input$xrange, origin = "1970-01-01")
-      ) +
-      scale_color_manual(values = c("Temperature" = "#377eb8"), name = "") +
-      theme_bw(base_family = "Arial") +
-      theme(
-        plot.title = element_text(
-          family = "Arial",
-          face = "bold",
-          size = 16,
-          hjust = 0.5
-        ),
-        plot.subtitle = element_text(
-          family = "Arial",
-          face = "plain",
-          size = 14,
-          hjust = 0.5
-        ),
-        axis.title = element_text(family = "Arial", face = "plain", size = 13),
-        axis.text = element_text(family = "Arial", face = "plain", size = 12),
-        axis.text.x = element_text(angle = 60, hjust = 1),
-        axis.line = element_line(linewidth = 0.5, colour = "black"),
-        legend.title = element_text(
-          family = "Arial",
-          face = "plain",
-          size = 12
-        ),
-        legend.text = element_text(family = "Arial", face = "plain", size = 12),
-        legend.position = "bottom",
-        panel.grid = element_blank()
-      ) +
-      labs(x = "RealTime", title = input$plot_title)
+    
+    # 创建基础图表
+    p <- plot_ly()
+    
+    # 准备shapes列表用于添加暗周期背景和注射标记
+    shapes <- list()
+    
+    # 添加暗周期背景
+    if (nrow(shade_df) > 0) {
+      for (i in seq_len(nrow(shade_df))) {
+        shapes[[length(shapes) + 1]] <- list(
+          type = "rect",
+          x0 = shade_df$xmin[i],
+          x1 = shade_df$xmax[i],
+          y0 = input$yrange[1],
+          y1 = input$yrange[2],
+          fillcolor = "rgba(128, 128, 128, 0.2)",
+          line = list(width = 0),
+          layer = "below"
+        )
+      }
+    }
+    
+    # 如果是处理后的数据且包含Injection列，添加注射标记
+    if (isTRUE(input$show_processed) && "Injection" %in% names(df)) {
+      injection_times <- df$RealTime[df$Injection == TRUE & !is.na(df$Injection)]
+      if (length(injection_times) > 0) {
+        for (time in injection_times) {
+          shapes[[length(shapes) + 1]] <- list(
+            type = "line",
+            x0 = time,
+            x1 = time,
+            y0 = input$yrange[1],
+            y1 = input$yrange[2],
+            line = list(
+              color = "red",
+              width = 1,
+              dash = "dash"
+            )
+          )
+        }
+      }
+    }
+    
+    # 添加温度曲线
+    p <- p %>% add_trace(
+      data = df,
+      x = ~RealTime,
+      y = ~Temperature,
+      type = "scatter",
+      mode = "lines",
+      name = "Temperature",
+      line = list(color = "#377eb8", width = 1),
+      hoverinfo = "text",
+      text = ~paste(
+        "时间: ", format(RealTime, "%Y-%m-%d %H:%M"),
+        "<br>温度: ", round(Temperature, 2), "°C"
+      )
+    )
+    
+    # 设置图表布局
+    p <- p %>% layout(
+      title = list(
+        text = input$plot_title,
+        font = list(family = "Arial", size = 20, weight = "bold")
+      ),
+      xaxis = list(
+        title = "RealTime",
+        type = "date",
+        tickformat = "%b %d %H:%M",
+        tickangle = -60,
+        range = as.POSIXct(input$xrange, origin = "1970-01-01"),
+        showgrid = FALSE,
+        showline = TRUE,
+        linewidth = 1,
+        mirror = TRUE
+      ),
+      yaxis = list(
+        title = "Temperature(°C)",
+        range = input$yrange,
+        dtick = 3,
+        showgrid = FALSE,
+        showline = TRUE,
+        linewidth = 1,
+        mirror = TRUE
+      ),
+      legend = list(
+        orientation = "h",
+        x = 0.5,
+        y = -0.2,
+        xanchor = "center",
+        yanchor = "top"
+      ),
+      margin = list(l = 60, r = 20, t = 60, b = 100),
+      hovermode = "closest",
+      showlegend = TRUE,
+      plot_bgcolor = "white",
+      paper_bgcolor = "white",
+      # 使用shapes参数添加暗周期背景和注射标记
+      shapes = shapes
+    )
+    
+    # 添加交互功能
+    p <- p %>% config(
+      displayModeBar = TRUE,
+      scrollZoom = TRUE,
+      modeBarButtonsToAdd = list(
+        "select2d",
+        "lasso2d",
+        "zoomIn",
+        "zoomOut",
+        "autoScale",
+        "resetScale",
+        "toImage"
+      ),
+      toImageButtonOptions = list(
+        format = "png",
+        filename = "temperature_plot",
+        width = 1200,
+        height = 800
+      )
+    )
+    
+    p
   })
 }
 
+# 运行Shiny应用
 shinyApp(ui, server)
