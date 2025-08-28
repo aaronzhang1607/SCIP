@@ -2,12 +2,8 @@
 
 library(shiny)
 
-# 设置工作目录到项目根目录
-setwd("d:/OneDrive - sustc1607/WangLab/Projects/Mouse Torpor/Agtr1a/SCIP_V3")
-
 # 加载所有必要的R文件
 cat("Current working directory:", getwd(), "\n")
-cat("Files in directory:", list.files("R"), "\n")
 
 # 加载文件
 tryCatch({
