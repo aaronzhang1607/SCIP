@@ -14,8 +14,8 @@ SCIP (Self-developed implant format Conversion and Interactive Plotting) 是一�
 - **数据导出**：支持导出处理后的数据和图表
 
 ## 目录结构
-- 模块化源码
-  - `app.R` 应用入口
+- 项目根目录下的源码文件：
+  - `app.R` 应用入口（基于自身路径加载其余脚本，不使用 `setwd`）
   - `ui.R` 界面定义（shinydashboard）
   - `server.R` 服务器逻辑（装配模块）
   - `modules_data.R` 数据导入与清洗（兼容新/旧格式）
@@ -32,11 +32,12 @@ install.packages(c("shiny", "shinydashboard", "plotly", "dplyr", "tidyr"))
 ```
 
 ### 运行应用
-1. 在R中运行：
+1. 在 R 中运行：
    ```r
    source("app.R", encoding = "UTF-8")
    ```
-2. 或在RStudio中打开 `app.R` 并点击 "Run App"
+2. 或在 RStudio/VSCode 中打开 `app.R` 并点击/执行 “Run App”
+3. 说明：`app.R` 会基于脚本自身路径按相对路径 `source()` 其它模块文件，因此无需、也不应使用 `setwd()`。
 
 ## 支持的数据格式
 
