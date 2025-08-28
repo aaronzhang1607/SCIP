@@ -19,6 +19,10 @@ tryCatch({
   
   # 运行应用
   cat("Starting Shiny app...\n")
+  
+  # 使用系统默认浏览器打开（在RStudio中也会外部打开）
+  options(shiny.launch.browser = TRUE)
+  
   shinyApp(ui = scip_ui, server = scip_server)
   
 }, error = function(e) {
