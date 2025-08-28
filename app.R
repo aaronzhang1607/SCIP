@@ -7,11 +7,11 @@ cat("Current working directory:", getwd(), "\n")
 
 # 加载文件
 tryCatch({
-  source("R/utils_shade.R", encoding = 'UTF-8')
-  source("R/modules_data.R", encoding = 'UTF-8')
-  source("R/modules_plot.R", encoding = 'UTF-8')
-  source("R/ui.R", encoding = 'UTF-8')
-  source("R/server.R", encoding = 'UTF-8')
+  source("utils_shade.R", encoding = 'UTF-8')
+  source("modules_data.R", encoding = 'UTF-8')
+  source("modules_plot.R", encoding = 'UTF-8')
+  source("ui.R", encoding = 'UTF-8')
+  source("server.R", encoding = 'UTF-8')
   
   # 检查必要函数是否存在
   if (!exists("scip_ui")) stop("scip_ui not found")
