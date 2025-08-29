@@ -107,3 +107,5 @@ scip_ui <- dashboardPage(
   )
 )
 
+# 为兼容 ui.R/server.R 入口，导出标准对象名
+ui <- scip_ui

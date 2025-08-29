@@ -152,4 +152,5 @@ scip_server <- function(input, output, session) {
   )
 }
 
-
+# 为兼容 ui.R/server.R 入口，导出标准对象名
+server <- scip_server
