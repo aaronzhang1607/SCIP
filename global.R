@@ -7,14 +7,10 @@ suppressPackageStartupMessages({
   library(plotly)
 })
 
-# 保证相对路径以当前应用目录为基准
-.app_dir <- getwd()
-.src <- function(rel) {
-  f <- normalizePath(file.path(.app_dir, rel), winslash = "/", mustWork = TRUE)
-  source(f, encoding = "UTF-8")
-}
+# 总是使用系统默认浏览器打开 Shiny 应用
+options(shiny.launch.browser = TRUE, viewer = NULL)
 
-# 按顺序加载工具与模块（供 ui.R/server.R 使用）
-.src("utils_shade.R")
-.src("modules_data.R")
-.src("modules_plot.R")
+# 直接按相对路径加载（runGitHub 会将工作目录设为应用根目录）
+source("utils_shade.R", encoding = "UTF-8")
+source("modules_data.R", encoding = "UTF-8")
+source("modules_plot.R", encoding = "UTF-8")
