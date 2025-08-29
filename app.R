@@ -2,8 +2,7 @@
 
 library(shiny)
 
-# 使用系统默认浏览器打开（在RStudio中也会外部打开）
-options(shiny.launch.browser = TRUE)
+
 
 # 计算当前脚本(app.R)的绝对路径（兼容 Rscript、RStudio、交互运行）
 .this_script_path <- function() {
@@ -52,6 +51,10 @@ tryCatch({
   
   # 运行应用
   cat("Starting Shiny app...\n")
+
+  # 使用系统默认浏览器打开（在RStudio中也会外部打开）
+  options(shiny.launch.browser = TRUE)
+
   shinyApp(ui = scip_ui, server = scip_server)
   
 }, error = function(e) {
